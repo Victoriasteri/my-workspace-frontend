@@ -11,12 +11,15 @@ import {
   Toolbar,
   Box,
   Typography,
+  Divider,
 } from "@mui/material";
 import NotesIcon from "@mui/icons-material/Notes";
 import FolderIcon from "@mui/icons-material/Folder";
 import ChecklistIcon from "@mui/icons-material/Checklist";
 import PhotoLibraryIcon from "@mui/icons-material/PhotoLibrary";
+import LogoutIcon from "@mui/icons-material/Logout";
 import { usePathname, useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
 
 const DRAWER_WIDTH = 240;
 
@@ -67,11 +70,24 @@ export const AppNavigation: React.FC<AppNavigationProps> = ({
 }) => {
   const pathname = usePathname();
   const router = useRouter();
+  const { user, logout } = useAuth();
 
   const handleNavigation = (path: string) => {
     router.push(path);
     if (variant !== "permanent" && onClose) {
       onClose();
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      router.push("/login");
+      if (variant !== "permanent" && onClose) {
+        onClose();
+      }
+    } catch (error) {
+      console.error("Error logging out:", error);
     }
   };
 
@@ -87,6 +103,17 @@ export const AppNavigation: React.FC<AppNavigationProps> = ({
           My Work Space
         </Typography>
       </Toolbar>
+      {user && (
+        <Box sx={{ px: 2, py: 1 }}>
+          <Typography variant="body2" color="text.secondary" noWrap>
+            {user.firstName} {user.lastName}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" noWrap>
+            {user.email}
+          </Typography>
+        </Box>
+      )}
+      <Divider />
       <List>
         {modules.map((module) => {
           const isActive =
@@ -121,6 +148,17 @@ export const AppNavigation: React.FC<AppNavigationProps> = ({
             </ListItem>
           );
         })}
+      </List>
+      <Divider />
+      <List>
+        <ListItem disablePadding>
+          <ListItemButton onClick={handleLogout}>
+            <ListItemIcon>
+              <LogoutIcon />
+            </ListItemIcon>
+            <ListItemText primary="Logout" />
+          </ListItemButton>
+        </ListItem>
       </List>
     </>
   );

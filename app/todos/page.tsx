@@ -11,8 +11,9 @@ import { Todo, CreateTodoDto, UpdateTodoDto } from "@/types/todo";
 import { ModuleLayout } from "@/components/shared/ModuleLayout";
 import { useNotification } from "@/components/shared/useNotification";
 import { LoadingOverlay } from "@/components/shared/LoadingOverlay";
+import { ProtectedRoute } from "@/components/shared/ProtectedRoute";
 
-export default function TodosPage() {
+function TodosPageContent() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
   const [apiLoading, setApiLoading] = useState(false);
@@ -287,5 +288,13 @@ export default function TodosPage() {
 
       <LoadingOverlay open={apiLoading} message={loadingMessage} />
     </ModuleLayout>
+  );
+}
+
+export default function TodosPage() {
+  return (
+    <ProtectedRoute>
+      <TodosPageContent />
+    </ProtectedRoute>
   );
 }

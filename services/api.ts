@@ -8,6 +8,7 @@ import {
   CreateTodoItemDto,
   UpdateTodoItemDto,
 } from "@/types/todo";
+import { User, CreateUserDto, LoginDto, AuthResponse } from "@/types/user";
 
 const API_BASE_URL = "http://localhost:3000";
 
@@ -17,6 +18,97 @@ const apiClient = axios.create({
     "Content-Type": "application/json",
   },
 });
+
+// Token management
+const TOKEN_KEY = "auth_token";
+
+export const setAuthToken = (token: string | null) => {
+  if (token) {
+    localStorage.setItem(TOKEN_KEY, token);
+    apiClient.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+  } else {
+    localStorage.removeItem(TOKEN_KEY);
+    delete apiClient.defaults.headers.common["Authorization"];
+  }
+};
+
+export const getAuthToken = (): string | null => {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem(TOKEN_KEY);
+  }
+  return null;
+};
+
+// Initialize token on load
+if (typeof window !== "undefined") {
+  const token = getAuthToken();
+  if (token) {
+    apiClient.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+  }
+}
+
+// Add response interceptor to handle 401 errors
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Unauthorized - clear token and redirect to login
+      setAuthToken(null);
+      if (typeof window !== "undefined") {
+        // Only redirect if we're not already on login/signup pages
+        const currentPath = window.location.pathname;
+        if (currentPath !== "/login" && currentPath !== "/signup") {
+          window.location.href = "/login";
+        }
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Auth API
+export const authApi = {
+  // POST /auth/register - Register a new user
+  register: async (userData: CreateUserDto): Promise<AuthResponse> => {
+    const response = await apiClient.post<AuthResponse>(
+      "/auth/register",
+      userData
+    );
+    if (response.data.access_token) {
+      setAuthToken(response.data.access_token);
+    }
+    return response.data;
+  },
+
+  // POST /auth/login - Login user
+  login: async (credentials: LoginDto): Promise<AuthResponse> => {
+    const response = await apiClient.post<AuthResponse>(
+      "/auth/login",
+      credentials
+    );
+    if (response.data.access_token) {
+      setAuthToken(response.data.access_token);
+    }
+    return response.data;
+  },
+
+  // POST /auth/logout - Logout user
+  logout: async (): Promise<void> => {
+    try {
+      await apiClient.post("/auth/logout");
+    } catch (error) {
+      console.error("Error logging out:", error);
+    } finally {
+      setAuthToken(null);
+    }
+  },
+
+  // GET /auth/profile - Get current user profile
+  getProfile: async (): Promise<User> => {
+    const response = await apiClient.get<User>("/auth/profile");
+    return response.data;
+  },
+};
 
 export const notesApi = {
   // GET /notes - Get all notes

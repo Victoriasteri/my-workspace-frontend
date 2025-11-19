@@ -3,9 +3,10 @@
 import React from "react";
 import { ModuleLayout } from "@/components/shared/ModuleLayout";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { ProtectedRoute } from "@/components/shared/ProtectedRoute";
 import PhotoLibraryIcon from "@mui/icons-material/PhotoLibrary";
 
-export default function GalleryPage() {
+function GalleryPageContent() {
   return (
     <ModuleLayout title="My Gallery">
       <EmptyState
@@ -14,5 +15,13 @@ export default function GalleryPage() {
         icon={<PhotoLibraryIcon />}
       />
     </ModuleLayout>
+  );
+}
+
+export default function GalleryPage() {
+  return (
+    <ProtectedRoute>
+      <GalleryPageContent />
+    </ProtectedRoute>
   );
 }

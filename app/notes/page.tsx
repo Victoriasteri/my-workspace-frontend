@@ -11,8 +11,9 @@ import { Note, CreateNoteDto, UpdateNoteDto, Attachment } from "@/types/note";
 import { ModuleLayout } from "@/components/shared/ModuleLayout";
 import { useNotification } from "@/components/shared/useNotification";
 import { LoadingOverlay } from "@/components/shared/LoadingOverlay";
+import { ProtectedRoute } from "@/components/shared/ProtectedRoute";
 
-export default function NotesPage() {
+function NotesPageContent() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
   const [apiLoading, setApiLoading] = useState(false);
@@ -253,5 +254,13 @@ export default function NotesPage() {
 
       <LoadingOverlay open={apiLoading} message={loadingMessage} />
     </ModuleLayout>
+  );
+}
+
+export default function NotesPage() {
+  return (
+    <ProtectedRoute>
+      <NotesPageContent />
+    </ProtectedRoute>
   );
 }
