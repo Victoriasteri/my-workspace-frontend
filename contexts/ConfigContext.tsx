@@ -20,12 +20,12 @@ interface ConfigProviderProps {
 }
 
 /**
- * ConfigProvider fetches the API configuration from the internal Next.js API endpoint.
+ * ConfigProvider
  *
- * This keeps the API URL server-side only and fetches it at runtime,
- * preventing it from being exposed in the client bundle.
+ * Fetches API configuration from the internal /api/config endpoint at runtime.
+ * This ensures the API URL is never embedded in the client bundle.
  *
- * Once the config is loaded, it initializes the API client with the correct base URL.
+ * Once config is loaded, initializes the global axios instance.
  */
 export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
   const [config, setConfig] = useState<Config | null>(null);
@@ -42,22 +42,16 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
         }
 
         const data = await response.json();
-        setConfig(data);
 
-        // Initialize the API client with the fetched base URL
+        // Initialize global axios instance with the fetched API URL
         initializeApiClient(data.apiBaseUrl);
-      } catch (err) {
-        console.error("Error fetching config:", err);
-        setError(
-          err instanceof Error ? err : new Error("Failed to load configuration")
-        );
 
-        // Fallback to localhost for development if config fetch fails
-        const fallbackUrl = "http://localhost:3000";
-        if (process.env.NODE_ENV === "development") {
-          setConfig({ apiBaseUrl: fallbackUrl });
-          initializeApiClient(fallbackUrl);
-        }
+        setConfig(data);
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : "Failed to load configuration";
+        console.error("Error fetching config:", err);
+        setError(new Error(errorMessage));
       } finally {
         setLoading(false);
       }
@@ -75,8 +69,6 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
 
 /**
  * Hook to access the configuration context.
- *
- * @throws Error if used outside of ConfigProvider
  */
 export const useConfig = (): ConfigContextType => {
   const context = useContext(ConfigContext);

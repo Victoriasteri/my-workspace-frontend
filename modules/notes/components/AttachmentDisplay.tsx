@@ -21,6 +21,7 @@ import {
   Visibility,
 } from "@mui/icons-material";
 import { Attachment } from "@/types/note";
+import { useConfig } from "@/contexts/ConfigContext";
 
 interface AttachmentDisplayProps {
   attachments: Attachment[];
@@ -65,6 +66,7 @@ export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({
     string | null
   >(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const { config } = useConfig();
 
   // Use prop if provided, otherwise use local state
   const deletingAttachmentId =
@@ -79,9 +81,10 @@ export const AttachmentDisplay: React.FC<AttachmentDisplayProps> = ({
       onDownload(attachment);
     } else {
       // Handle both absolute and relative URLs
+      const baseUrl = config?.apiBaseUrl || "";
       const url = attachment.url.startsWith("http")
         ? attachment.url
-        : `http://localhost:3000${attachment.url}`;
+        : `${baseUrl}${attachment.url}`;
       window.open(url, "_blank");
     }
   };

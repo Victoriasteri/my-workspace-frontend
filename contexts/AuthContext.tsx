@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { User, CreateUserDto } from "@/types/user";
 import { authApi } from "@/services/api";
+import { useConfig } from "./ConfigContext";
 
 interface AuthContextType {
   user: User | null;
@@ -30,9 +31,15 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const { config, loading: configLoading } = useConfig();
 
-  // Load user on mount - verify authentication with backend
+  // Load user after config is loaded
   useEffect(() => {
+    // Wait for config to be loaded before making API calls
+    if (configLoading || !config) {
+      return;
+    }
+
     const loadUser = async () => {
       try {
         const profile = await authApi.getMe();
@@ -63,7 +70,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return () => {
       window.removeEventListener("auth:logout", handleLogout);
     };
-  }, []); // Only run once on mount
+  }, [configLoading, config]); // Run when config is loaded
 
   const login = async (email: string, password: string) => {
     const response = await authApi.login({ email, password });
