@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Button } from "@mui/material";
+import React, { useState, useEffect, useMemo } from "react";
+import { Button, Typography, Box, Divider } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import { TodoForm } from "@/modules/todos/components/TodoForm";
 import { TodosList } from "@/modules/todos/components/TodosList";
@@ -121,6 +121,17 @@ export default function TodosPage() {
     setViewingTodo(null);
   };
 
+  const handleTodoUpdate = (updatedTodo: Todo) => {
+    // Update the todo in the list to reflect changes
+    setTodos((prev) =>
+      prev.map((todo) => (todo.id === updatedTodo.id ? updatedTodo : todo))
+    );
+    // Also update viewingTodo if it's the same one
+    if (viewingTodo?.id === updatedTodo.id) {
+      setViewingTodo(updatedTodo);
+    }
+  };
+
   const handleFormClose = () => {
     setFormOpen(false);
     setEditingTodo(null);
@@ -135,6 +146,28 @@ export default function TodosPage() {
       return await handleCreateTodo(todoData as CreateTodoDto);
     }
   };
+
+  // Helper function to check if a todo is completed
+  const isTodoCompleted = (todo: Todo): boolean => {
+    if (!todo.items || todo.items.length === 0) return false;
+    return todo.items.every((item) => item.isCompleted);
+  };
+
+  // Filter todos into completed and in progress
+  const { completedTodos, inProgressTodos } = useMemo(() => {
+    const completed: Todo[] = [];
+    const inProgress: Todo[] = [];
+
+    todos.forEach((todo) => {
+      if (isTodoCompleted(todo)) {
+        completed.push(todo);
+      } else {
+        inProgress.push(todo);
+      }
+    });
+
+    return { completedTodos: completed, inProgressTodos: inProgress };
+  }, [todos]);
 
   const actionButton = (
     <Button
@@ -153,20 +186,95 @@ export default function TodosPage() {
       notification={notification}
       onNotificationClose={hideNotification}
     >
-      <TodosList
-        todos={todos}
-        onEdit={handleEditClick}
-        onDelete={handleDeleteTodo}
-        onClick={handleCardClick}
-        loading={loading}
-        onCreateNew={() => setFormOpen(true)}
-      />
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {/* In Progress Section */}
+        <Box>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 1,
+              mb: 2,
+            }}
+          >
+            <Typography variant="h5" component="h2" sx={{ fontWeight: 600 }}>
+              In Progress
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>
+              ({inProgressTodos.length})
+            </Typography>
+          </Box>
+          <Divider sx={{ mb: 3 }} />
+          {loading ? (
+            <TodosList
+              todos={[]}
+              onEdit={handleEditClick}
+              onDelete={handleDeleteTodo}
+              onClick={handleCardClick}
+              loading={true}
+              onCreateNew={() => setFormOpen(true)}
+            />
+          ) : inProgressTodos.length === 0 ? (
+            <Box sx={{ py: 4, textAlign: "center" }}>
+              <Typography variant="body1" color="text.secondary">
+                No todos in progress. All done! 🎉
+              </Typography>
+            </Box>
+          ) : (
+            <TodosList
+              todos={inProgressTodos}
+              onEdit={handleEditClick}
+              onDelete={handleDeleteTodo}
+              onClick={handleCardClick}
+              loading={false}
+              onCreateNew={() => setFormOpen(true)}
+            />
+          )}
+        </Box>
+
+        {/* Completed Section */}
+        <Box>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 1,
+              mb: 2,
+            }}
+          >
+            <Typography variant="h5" component="h2" sx={{ fontWeight: 600 }}>
+              Completed
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>
+              ({completedTodos.length})
+            </Typography>
+          </Box>
+          <Divider sx={{ mb: 3 }} />
+          {completedTodos.length === 0 ? (
+            <Box sx={{ py: 4, textAlign: "center" }}>
+              <Typography variant="body1" color="text.secondary">
+                No completed todos yet.
+              </Typography>
+            </Box>
+          ) : (
+            <TodosList
+              todos={completedTodos}
+              onEdit={handleEditClick}
+              onDelete={handleDeleteTodo}
+              onClick={handleCardClick}
+              loading={false}
+              onCreateNew={() => setFormOpen(true)}
+            />
+          )}
+        </Box>
+      </Box>
 
       <TodoViewDialog
         open={viewDialogOpen}
         onClose={handleViewDialogClose}
         todo={viewingTodo}
         onEdit={handleEditClick}
+        onTodoUpdate={handleTodoUpdate}
       />
 
       <TodoForm

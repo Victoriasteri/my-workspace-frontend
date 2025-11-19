@@ -1,7 +1,8 @@
 export interface TodoItem {
   id?: string;
-  text: string;
-  completed: boolean;
+  description: string;
+  isCompleted: boolean;
+  todoId?: string;
   createdAt?: string;
   updatedAt?: string | null;
 }
@@ -26,10 +27,11 @@ export interface UpdateTodoDto {
 }
 
 export interface CreateTodoItemDto {
-  text: string;
+  description: string;
+  isCompleted: boolean;
 }
 
 export interface UpdateTodoItemDto {
-  text?: string;
-  completed?: boolean;
+  description?: string;
+  isCompleted?: boolean;
 }

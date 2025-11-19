@@ -19,6 +19,7 @@ import {
   Divider,
   Chip,
   CircularProgress,
+  Popover,
 } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
 import CloseIcon from "@mui/icons-material/Close";
@@ -35,6 +36,7 @@ interface TodoViewDialogProps {
   onClose: () => void;
   todo: Todo | null;
   onEdit: (todo: Todo) => void;
+  onTodoUpdate?: (updatedTodo: Todo) => void;
 }
 
 export const TodoViewDialog: React.FC<TodoViewDialogProps> = ({
@@ -42,11 +44,16 @@ export const TodoViewDialog: React.FC<TodoViewDialogProps> = ({
   onClose,
   todo,
   onEdit,
+  onTodoUpdate,
 }) => {
   const [items, setItems] = useState<TodoItem[]>([]);
   const [newItemText, setNewItemText] = useState("");
   const [isAddingItem, setIsAddingItem] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [pendingItemIds, setPendingItemIds] = useState<Set<string>>(new Set());
+  const [deleteAnchorEl, setDeleteAnchorEl] =
+    useState<HTMLButtonElement | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const { notification, showNotification, hideNotification } =
     useNotification();
 
@@ -65,6 +72,17 @@ export const TodoViewDialog: React.FC<TodoViewDialogProps> = ({
     }
   }, [todo?.id, showNotification]);
 
+  // Helper function to update parent component with current todo state
+  const updateParentTodo = useCallback(() => {
+    if (!todo || !onTodoUpdate) return;
+
+    const updatedTodo: Todo = {
+      ...todo,
+      items: items,
+    };
+    onTodoUpdate(updatedTodo);
+  }, [todo, items, onTodoUpdate]);
+
   useEffect(() => {
     if (open && todo?.id) {
       fetchItems();
@@ -72,6 +90,16 @@ export const TodoViewDialog: React.FC<TodoViewDialogProps> = ({
       setIsAddingItem(false);
     }
   }, [open, todo?.id, fetchItems]);
+
+  // Update parent when dialog closes to ensure latest state is reflected
+  useEffect(() => {
+    if (!open && todo && onTodoUpdate) {
+      // Use setTimeout to ensure state updates are complete
+      setTimeout(() => {
+        updateParentTodo();
+      }, 0);
+    }
+  }, [open, todo, onTodoUpdate, updateParentTodo]);
 
   if (!todo) return null;
 
@@ -83,16 +111,65 @@ export const TodoViewDialog: React.FC<TodoViewDialogProps> = ({
   const handleAddItem = async () => {
     if (!newItemText.trim() || !todo?.id) return;
 
+    // Create temporary item for optimistic UI update
+    const tempId = `temp-${Date.now()}`;
+    const tempItem: TodoItem = {
+      id: tempId,
+      description: newItemText.trim(),
+      isCompleted: false,
+      todoId: todo.id,
+    };
+
+    // Immediately add to UI
+    setItems((prev) => [...prev, tempItem]);
+    setPendingItemIds((prev) => new Set(prev).add(tempId));
+    setNewItemText("");
+    setIsAddingItem(false);
+
     try {
+      // Make API call
       const newItem = await todosApi.createTodoItem(todo.id, {
-        text: newItemText.trim(),
+        description: tempItem.description,
+        isCompleted: false,
       });
-      setItems((prev) => [...prev, newItem]);
-      setNewItemText("");
-      setIsAddingItem(false);
+
+      // Replace temporary item with real item from API
+      setItems((prev) => {
+        const updated = prev.map((item) =>
+          item.id === tempId ? newItem : item
+        );
+        // Update parent component
+        setTimeout(() => {
+          if (todo && onTodoUpdate) {
+            onTodoUpdate({ ...todo, items: updated });
+          }
+        }, 0);
+        return updated;
+      });
+      setPendingItemIds((prev) => {
+        const updated = new Set(prev);
+        updated.delete(tempId);
+        return updated;
+      });
       showNotification("Item added successfully", "success");
     } catch (error) {
       console.error("Error adding todo item:", error);
+      // Remove temporary item on error
+      setItems((prev) => {
+        const updated = prev.filter((item) => item.id !== tempId);
+        // Update parent component even on error (to remove the failed item)
+        setTimeout(() => {
+          if (todo && onTodoUpdate) {
+            onTodoUpdate({ ...todo, items: updated });
+          }
+        }, 0);
+        return updated;
+      });
+      setPendingItemIds((prev) => {
+        const updated = new Set(prev);
+        updated.delete(tempId);
+        return updated;
+      });
       showNotification("Failed to add item", "error");
     }
   };
@@ -100,48 +177,151 @@ export const TodoViewDialog: React.FC<TodoViewDialogProps> = ({
   const handleToggleItem = async (itemId: string) => {
     if (!todo?.id) return;
 
+    // Prevent toggling pending items
+    if (pendingItemIds.has(itemId)) return;
+
     const item = items.find((i) => i.id === itemId);
     if (!item) return;
 
+    // STEP 1: Update local state IMMEDIATELY using functional update
+    const newCompletedStatus = !item.isCompleted;
+
+    // Update state immediately - this should trigger immediate re-render
+    let updatedItems: TodoItem[] = [];
+    setItems((prev) => {
+      updatedItems = prev.map((i) =>
+        i.id === itemId ? { ...i, isCompleted: newCompletedStatus } : i
+      );
+      return updatedItems;
+    });
+
+    // Update parent component after state update (defer to avoid blocking)
+    if (onTodoUpdate && todo) {
+      setTimeout(() => {
+        onTodoUpdate({ ...todo, items: updatedItems });
+      }, 0);
+    }
+
+    // STEP 2: Call API AFTER state is updated
     try {
       const updatedItem = await todosApi.updateTodoItem(todo.id, itemId, {
-        completed: !item.completed,
+        isCompleted: newCompletedStatus,
       });
-      setItems((prev) => prev.map((i) => (i.id === itemId ? updatedItem : i)));
+
+      // Replace optimistic update with real API response
+      setItems((prev) => {
+        const finalItems = prev.map((i) => (i.id === itemId ? updatedItem : i));
+        if (onTodoUpdate && todo) {
+          onTodoUpdate({ ...todo, items: finalItems });
+        }
+        return finalItems;
+      });
     } catch (error) {
       console.error("Error updating todo item:", error);
+      // Revert optimistic update on error
+      setItems((prev) => {
+        const revertedItems = prev.map((i) => (i.id === itemId ? item : i));
+        if (onTodoUpdate && todo) {
+          onTodoUpdate({ ...todo, items: revertedItems });
+        }
+        return revertedItems;
+      });
       showNotification("Failed to update item", "error");
     }
   };
 
-  const handleDeleteItem = async (itemId: string) => {
-    if (!todo?.id) return;
+  const handleDeleteClick = (
+    event: React.MouseEvent<HTMLButtonElement>,
+    itemId: string
+  ) => {
+    event.stopPropagation();
+    // Prevent deleting pending items
+    if (pendingItemIds.has(itemId)) return;
+    setDeleteAnchorEl(event.currentTarget);
+    setPendingDeleteId(itemId);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!pendingDeleteId || !todo?.id) {
+      handleDeleteCancel();
+      return;
+    }
 
     try {
-      await todosApi.deleteTodoItem(todo.id, itemId);
-      setItems((prev) => prev.filter((item) => item.id !== itemId));
+      await todosApi.deleteTodoItem(todo.id, pendingDeleteId);
+      setItems((prev) => {
+        const updated = prev.filter((item) => item.id !== pendingDeleteId);
+        // Update parent component
+        if (onTodoUpdate) {
+          setTimeout(() => {
+            if (todo) {
+              onTodoUpdate({ ...todo, items: updated });
+            }
+          }, 0);
+        }
+        return updated;
+      });
       showNotification("Item deleted successfully", "success");
     } catch (error) {
       console.error("Error deleting todo item:", error);
       showNotification("Failed to delete item", "error");
+    } finally {
+      handleDeleteCancel();
     }
   };
+
+  const handleDeleteCancel = () => {
+    setDeleteAnchorEl(null);
+    setPendingDeleteId(null);
+  };
+
+  const deletePopoverOpen = Boolean(deleteAnchorEl);
 
   const handleUpdateItemText = async (itemId: string, newText: string) => {
     if (!todo?.id) return;
 
     if (!newText.trim()) {
-      await handleDeleteItem(itemId);
+      // If text is empty, delete the item
+      try {
+        await todosApi.deleteTodoItem(todo.id, itemId);
+        setItems((prev) => {
+          const updated = prev.filter((item) => item.id !== itemId);
+          // Update parent component
+          if (onTodoUpdate) {
+            setTimeout(() => {
+              if (todo) {
+                onTodoUpdate({ ...todo, items: updated });
+              }
+            }, 0);
+          }
+          return updated;
+        });
+        showNotification("Item deleted successfully", "success");
+      } catch (error) {
+        console.error("Error deleting todo item:", error);
+        showNotification("Failed to delete item", "error");
+      }
       return;
     }
 
     try {
       const updatedItem = await todosApi.updateTodoItem(todo.id, itemId, {
-        text: newText.trim(),
+        description: newText.trim(),
       });
-      setItems((prev) =>
-        prev.map((item) => (item.id === itemId ? updatedItem : item))
-      );
+      setItems((prev) => {
+        const updated = prev.map((item) =>
+          item.id === itemId ? updatedItem : item
+        );
+        // Update parent component
+        if (onTodoUpdate) {
+          setTimeout(() => {
+            if (todo) {
+              onTodoUpdate({ ...todo, items: updated });
+            }
+          }, 0);
+        }
+        return updated;
+      });
       showNotification("Item updated successfully", "success");
     } catch (error) {
       console.error("Error updating todo item:", error);
@@ -149,7 +329,7 @@ export const TodoViewDialog: React.FC<TodoViewDialogProps> = ({
     }
   };
 
-  const completedCount = items.filter((item) => item.completed).length;
+  const completedCount = items.filter((item) => item.isCompleted).length;
   const totalCount = items.length;
 
   return (
@@ -289,8 +469,9 @@ export const TodoViewDialog: React.FC<TodoViewDialogProps> = ({
                     <TodoItemComponent
                       key={item.id}
                       item={item}
+                      isPending={pendingItemIds.has(item.id!)}
                       onToggle={() => handleToggleItem(item.id!)}
-                      onDelete={() => handleDeleteItem(item.id!)}
+                      onDelete={(e) => handleDeleteClick(e, item.id!)}
                       onUpdateText={(newText) =>
                         handleUpdateItemText(item.id!, newText)
                       }
@@ -318,29 +499,80 @@ export const TodoViewDialog: React.FC<TodoViewDialogProps> = ({
         severity={notification.severity}
         onClose={hideNotification}
       />
+      <Popover
+        open={deletePopoverOpen}
+        anchorEl={deleteAnchorEl}
+        onClose={handleDeleteCancel}
+        anchorOrigin={{
+          vertical: "bottom",
+          horizontal: "left",
+        }}
+        transformOrigin={{
+          vertical: "top",
+          horizontal: "left",
+        }}
+      >
+        <Box sx={{ p: 2, minWidth: 200 }}>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            Delete this item?
+          </Typography>
+          <Box sx={{ display: "flex", gap: 1, justifyContent: "flex-end" }}>
+            <Button
+              size="small"
+              onClick={handleDeleteCancel}
+              variant="outlined"
+            >
+              Cancel
+            </Button>
+            <Button
+              size="small"
+              onClick={handleDeleteConfirm}
+              color="error"
+              variant="contained"
+            >
+              Delete
+            </Button>
+          </Box>
+        </Box>
+      </Popover>
     </>
   );
 };
 
 interface TodoItemComponentProps {
   item: TodoItem;
+  isPending?: boolean;
   onToggle: () => void;
-  onDelete: () => void;
+  onDelete: (event: React.MouseEvent<HTMLButtonElement>) => void;
   onUpdateText: (newText: string) => void;
 }
 
 const TodoItemComponent: React.FC<TodoItemComponentProps> = ({
   item,
+  isPending = false,
   onToggle,
   onDelete,
   onUpdateText,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
-  const [editText, setEditText] = useState(item.text);
+  const [editText, setEditText] = useState(item.description);
+  // Local state for immediate checkbox feedback
+  const [localCompleted, setLocalCompleted] = useState(item.isCompleted);
 
   useEffect(() => {
-    setEditText(item.text);
-  }, [item.text]);
+    setEditText(item.description);
+  }, [item.description]);
+
+  useEffect(() => {
+    setLocalCompleted(item.isCompleted);
+  }, [item.isCompleted]);
+
+  const handleToggle = () => {
+    // Update local state immediately for instant UI feedback
+    setLocalCompleted(!localCompleted);
+    // Then call the parent handler
+    onToggle();
+  };
 
   const handleSave = () => {
     onUpdateText(editText);
@@ -348,7 +580,7 @@ const TodoItemComponent: React.FC<TodoItemComponentProps> = ({
   };
 
   const handleCancel = () => {
-    setEditText(item.text);
+    setEditText(item.description);
     setIsEditing(false);
   };
 
@@ -358,13 +590,40 @@ const TodoItemComponent: React.FC<TodoItemComponentProps> = ({
         border: "1px solid #e0e0e0",
         borderRadius: 1,
         mb: 1,
+        opacity: isPending ? 0.6 : 1,
+        pointerEvents: isPending ? "none" : "auto",
+        position: "relative",
         "&:hover": {
-          backgroundColor: "#f5f5f5",
+          backgroundColor: isPending ? "transparent" : "#f5f5f5",
         },
       }}
     >
+      {isPending && (
+        <Box
+          sx={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            bgcolor: "rgba(255, 255, 255, 0.7)",
+            zIndex: 1,
+            borderRadius: 1,
+          }}
+        >
+          <CircularProgress size={20} />
+        </Box>
+      )}
       <ListItemIcon>
-        <Checkbox checked={item.completed} onChange={onToggle} edge="start" />
+        <Checkbox
+          checked={localCompleted}
+          onChange={handleToggle}
+          edge="start"
+          disabled={isPending}
+        />
       </ListItemIcon>
       {isEditing ? (
         <Box sx={{ display: "flex", gap: 1, flexGrow: 1 }}>
@@ -392,14 +651,14 @@ const TodoItemComponent: React.FC<TodoItemComponentProps> = ({
       ) : (
         <>
           <ListItemText
-            primary={item.text}
-            onClick={() => setIsEditing(true)}
+            primary={item.description}
+            onClick={() => !isPending && setIsEditing(true)}
             sx={{
-              cursor: "pointer",
-              textDecoration: item.completed ? "line-through" : "none",
-              color: item.completed ? "text.secondary" : "text.primary",
+              cursor: isPending ? "default" : "pointer",
+              textDecoration: item.isCompleted ? "line-through" : "none",
+              color: item.isCompleted ? "text.secondary" : "text.primary",
               "&:hover": {
-                backgroundColor: "#f0f0f0",
+                backgroundColor: isPending ? "transparent" : "#f0f0f0",
                 borderRadius: 1,
                 px: 1,
               },
@@ -411,6 +670,7 @@ const TodoItemComponent: React.FC<TodoItemComponentProps> = ({
             color="error"
             size="small"
             aria-label="delete item"
+            disabled={isPending}
           >
             <DeleteIcon />
           </IconButton>

@@ -64,7 +64,7 @@ export const TodoCard: React.FC<TodoCardProps> = ({
 
   const itemCount = todo.items?.length || 0;
   const completedCount =
-    todo.items?.filter((item) => item.completed).length || 0;
+    todo.items?.filter((item) => item.isCompleted).length || 0;
 
   return (
     <Card
