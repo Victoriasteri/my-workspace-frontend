@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { AxiosInstance } from "axios";
 import { Note, CreateNoteDto, UpdateNoteDto, Attachment } from "@/types/note";
 import {
   Todo,
@@ -9,43 +9,76 @@ import {
   UpdateTodoItemDto,
 } from "@/types/todo";
 import { User, CreateUserDto, LoginDto, AuthResponse } from "@/types/user";
-import { API_BASE_URL } from "@/config/env";
 import { API_ENDPOINTS } from "@/config/api-endpoints";
 
 /**
- * Axios client instance configured with base URL and default headers.
+ * Creates an axios client instance with the provided base URL.
  *
  * Uses HTTP-only cookies for authentication (withCredentials: true).
  * Cookies are automatically sent with requests and managed by the backend.
  */
-const apiClient = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    "Content-Type": "application/json",
-  },
-  withCredentials: true, // Send cookies with requests (required for HTTP-only cookies)
-});
+const createApiClient = (baseURL: string): AxiosInstance => {
+  const client = axios.create({
+    baseURL,
+    headers: {
+      "Content-Type": "application/json",
+    },
+    withCredentials: true, // Send cookies with requests (required for HTTP-only cookies)
+  });
+
+  // Add response interceptor to handle authentication errors
+  client.interceptors.response.use(
+    (response) => response,
+    (error) => {
+      if (error.response?.status === 401) {
+        // Unauthorized - notify AuthContext to clear user
+        // ProtectedRoute will handle redirect
+        if (typeof window !== "undefined") {
+          // Dispatch a custom event that AuthContext can listen to
+          window.dispatchEvent(new CustomEvent("auth:logout"));
+        }
+      }
+      return Promise.reject(error);
+    }
+  );
+
+  return client;
+};
 
 /**
- * Response interceptor to handle authentication errors.
+ * Gets the API client instance with the current base URL.
  *
- * When a 401 (Unauthorized) response is received, dispatches a custom event
- * that AuthContext listens to for automatic logout handling.
+ * This function fetches the base URL from the config endpoint if available,
+ * otherwise falls back to a default for development.
  */
-apiClient.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      // Unauthorized - notify AuthContext to clear user
-      // ProtectedRoute will handle redirect
-      if (typeof window !== "undefined") {
-        // Dispatch a custom event that AuthContext can listen to
-        window.dispatchEvent(new CustomEvent("auth:logout"));
-      }
-    }
-    return Promise.reject(error);
+let apiClient: AxiosInstance | null = null;
+let apiBaseUrl: string | null = null;
+
+/**
+ * Initialize the API client with the provided base URL.
+ * This should be called once when the config is loaded.
+ */
+export const initializeApiClient = (baseURL: string): void => {
+  if (apiBaseUrl !== baseURL) {
+    apiBaseUrl = baseURL;
+    apiClient = createApiClient(baseURL);
   }
-);
+};
+
+/**
+ * Gets the API client instance. Throws an error if not initialized.
+ */
+const getApiClient = (): AxiosInstance => {
+  if (!apiClient) {
+    // Fallback for development or if config hasn't loaded yet
+    const fallbackUrl =
+      typeof window !== "undefined"
+        ? "http://localhost:3000"
+        : "http://localhost:3000";
+    apiClient = createApiClient(fallbackUrl);
+  }
+  return apiClient;
+};
 
 /**
  * Authentication API
@@ -59,7 +92,7 @@ export const authApi = {
    * POST /auth/register
    */
   register: async (userData: CreateUserDto): Promise<AuthResponse> => {
-    const response = await apiClient.post<AuthResponse>(
+    const response = await getApiClient().post<AuthResponse>(
       API_ENDPOINTS.AUTH.REGISTER,
       userData
     );
@@ -72,7 +105,7 @@ export const authApi = {
    * POST /auth/login
    */
   login: async (credentials: LoginDto): Promise<AuthResponse> => {
-    const response = await apiClient.post<AuthResponse>(
+    const response = await getApiClient().post<AuthResponse>(
       API_ENDPOINTS.AUTH.LOGIN,
       credentials
     );
@@ -86,7 +119,7 @@ export const authApi = {
    */
   logout: async (): Promise<void> => {
     try {
-      await apiClient.post(API_ENDPOINTS.AUTH.LOGOUT);
+      await getApiClient().post(API_ENDPOINTS.AUTH.LOGOUT);
       // Cookie is cleared automatically by the backend
     } catch (error) {
       console.error("Error logging out:", error);
@@ -98,7 +131,7 @@ export const authApi = {
    * GET /auth/me
    */
   getMe: async (): Promise<User> => {
-    const response = await apiClient.get<User>(API_ENDPOINTS.AUTH.ME);
+    const response = await getApiClient().get<User>(API_ENDPOINTS.AUTH.ME);
     return response.data;
   },
 };
@@ -114,7 +147,7 @@ export const notesApi = {
    * GET /notes
    */
   getAllNotes: async (): Promise<Note[]> => {
-    const response = await apiClient.get<Note[]>(API_ENDPOINTS.NOTES.BASE);
+    const response = await getApiClient().get<Note[]>(API_ENDPOINTS.NOTES.BASE);
     return response.data;
   },
 
@@ -123,7 +156,9 @@ export const notesApi = {
    * GET /notes/:id
    */
   getNoteById: async (id: string): Promise<Note> => {
-    const response = await apiClient.get<Note>(API_ENDPOINTS.NOTES.BY_ID(id));
+    const response = await getApiClient().get<Note>(
+      API_ENDPOINTS.NOTES.BY_ID(id)
+    );
     return response.data;
   },
 
@@ -132,7 +167,10 @@ export const notesApi = {
    * POST /notes
    */
   createNote: async (note: CreateNoteDto): Promise<Note> => {
-    const response = await apiClient.post<Note>(API_ENDPOINTS.NOTES.BASE, note);
+    const response = await getApiClient().post<Note>(
+      API_ENDPOINTS.NOTES.BASE,
+      note
+    );
     return response.data;
   },
 
@@ -141,7 +179,7 @@ export const notesApi = {
    * PUT /notes/:id
    */
   updateNote: async (id: string, note: UpdateNoteDto): Promise<Note> => {
-    const response = await apiClient.put<Note>(
+    const response = await getApiClient().put<Note>(
       API_ENDPOINTS.NOTES.BY_ID(id),
       note
     );
@@ -153,7 +191,7 @@ export const notesApi = {
    * PATCH /notes/:id
    */
   patchNote: async (id: string, note: UpdateNoteDto): Promise<Note> => {
-    const response = await apiClient.patch<Note>(
+    const response = await getApiClient().patch<Note>(
       API_ENDPOINTS.NOTES.BY_ID(id),
       note
     );
@@ -165,7 +203,7 @@ export const notesApi = {
    * DELETE /notes/:id
    */
   deleteNote: async (id: string): Promise<void> => {
-    await apiClient.delete(API_ENDPOINTS.NOTES.BY_ID(id));
+    await getApiClient().delete(API_ENDPOINTS.NOTES.BY_ID(id));
   },
 
   /**
@@ -176,7 +214,7 @@ export const notesApi = {
     const formData = new FormData();
     formData.append("file", file);
 
-    const response = await apiClient.post<Attachment>(
+    const response = await getApiClient().post<Attachment>(
       API_ENDPOINTS.NOTES.ATTACHMENTS(noteId),
       formData,
       {
@@ -193,7 +231,7 @@ export const notesApi = {
    * GET /notes/:id/attachments
    */
   getNoteAttachments: async (noteId: string): Promise<Attachment[]> => {
-    const response = await apiClient.get<Attachment[]>(
+    const response = await getApiClient().get<Attachment[]>(
       API_ENDPOINTS.NOTES.ATTACHMENTS(noteId)
     );
     return response.data;
@@ -204,7 +242,9 @@ export const notesApi = {
    * DELETE /notes/attachments/:attachmentId
    */
   deleteAttachment: async (attachmentId: string): Promise<void> => {
-    await apiClient.delete(API_ENDPOINTS.NOTES.ATTACHMENT_BY_ID(attachmentId));
+    await getApiClient().delete(
+      API_ENDPOINTS.NOTES.ATTACHMENT_BY_ID(attachmentId)
+    );
   },
 };
 
@@ -219,7 +259,7 @@ export const todosApi = {
    * GET /todos
    */
   getAllTodos: async (): Promise<Todo[]> => {
-    const response = await apiClient.get<Todo[]>(API_ENDPOINTS.TODOS.BASE);
+    const response = await getApiClient().get<Todo[]>(API_ENDPOINTS.TODOS.BASE);
     return response.data;
   },
 
@@ -228,7 +268,9 @@ export const todosApi = {
    * GET /todos/:id
    */
   getTodoById: async (id: string): Promise<Todo> => {
-    const response = await apiClient.get<Todo>(API_ENDPOINTS.TODOS.BY_ID(id));
+    const response = await getApiClient().get<Todo>(
+      API_ENDPOINTS.TODOS.BY_ID(id)
+    );
     return response.data;
   },
 
@@ -237,7 +279,10 @@ export const todosApi = {
    * POST /todos
    */
   createTodo: async (todo: CreateTodoDto): Promise<Todo> => {
-    const response = await apiClient.post<Todo>(API_ENDPOINTS.TODOS.BASE, todo);
+    const response = await getApiClient().post<Todo>(
+      API_ENDPOINTS.TODOS.BASE,
+      todo
+    );
     return response.data;
   },
 
@@ -246,7 +291,7 @@ export const todosApi = {
    * PUT /todos/:id
    */
   updateTodo: async (id: string, todo: UpdateTodoDto): Promise<Todo> => {
-    const response = await apiClient.put<Todo>(
+    const response = await getApiClient().put<Todo>(
       API_ENDPOINTS.TODOS.BY_ID(id),
       todo
     );
@@ -258,7 +303,7 @@ export const todosApi = {
    * DELETE /todos/:id
    */
   deleteTodo: async (id: string): Promise<void> => {
-    await apiClient.delete(API_ENDPOINTS.TODOS.BY_ID(id));
+    await getApiClient().delete(API_ENDPOINTS.TODOS.BY_ID(id));
   },
 
   /**
@@ -266,7 +311,7 @@ export const todosApi = {
    * GET /todos/:id/items
    */
   getTodoItems: async (todoId: string): Promise<TodoItem[]> => {
-    const response = await apiClient.get<TodoItem[]>(
+    const response = await getApiClient().get<TodoItem[]>(
       API_ENDPOINTS.TODOS.ITEMS(todoId)
     );
     return response.data;
@@ -280,7 +325,7 @@ export const todosApi = {
     todoId: string,
     item: CreateTodoItemDto
   ): Promise<TodoItem> => {
-    const response = await apiClient.post<TodoItem>(
+    const response = await getApiClient().post<TodoItem>(
       API_ENDPOINTS.TODOS.ITEMS(todoId),
       item
     );
@@ -296,7 +341,7 @@ export const todosApi = {
     itemId: string,
     item: UpdateTodoItemDto
   ): Promise<TodoItem> => {
-    const response = await apiClient.put<TodoItem>(
+    const response = await getApiClient().put<TodoItem>(
       API_ENDPOINTS.TODOS.ITEM_BY_ID(todoId, itemId),
       item
     );
@@ -308,6 +353,6 @@ export const todosApi = {
    * DELETE /todos/:id/items/:itemId
    */
   deleteTodoItem: async (todoId: string, itemId: string): Promise<void> => {
-    await apiClient.delete(API_ENDPOINTS.TODOS.ITEM_BY_ID(todoId, itemId));
+    await getApiClient().delete(API_ENDPOINTS.TODOS.ITEM_BY_ID(todoId, itemId));
   },
 };
