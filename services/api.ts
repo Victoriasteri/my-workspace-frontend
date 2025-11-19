@@ -9,9 +9,15 @@ import {
   UpdateTodoItemDto,
 } from "@/types/todo";
 import { User, CreateUserDto, LoginDto, AuthResponse } from "@/types/user";
+import { API_BASE_URL } from "@/config/env";
+import { API_ENDPOINTS } from "@/config/api-endpoints";
 
-const API_BASE_URL = "http://localhost:3000";
-
+/**
+ * Axios client instance configured with base URL and default headers.
+ *
+ * Uses HTTP-only cookies for authentication (withCredentials: true).
+ * Cookies are automatically sent with requests and managed by the backend.
+ */
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -20,10 +26,12 @@ const apiClient = axios.create({
   withCredentials: true, // Send cookies with requests (required for HTTP-only cookies)
 });
 
-// Note: We use HTTP-only cookies for authentication, so no token management is needed.
-// Cookies are automatically sent with requests via withCredentials: true
-
-// Add response interceptor to handle 401 errors
+/**
+ * Response interceptor to handle authentication errors.
+ *
+ * When a 401 (Unauthorized) response is received, dispatches a custom event
+ * that AuthContext listens to for automatic logout handling.
+ */
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -39,88 +47,137 @@ apiClient.interceptors.response.use(
   }
 );
 
-// Auth API
+/**
+ * Authentication API
+ *
+ * Handles user registration, login, logout, and profile retrieval.
+ * Uses HTTP-only cookies for secure authentication.
+ */
 export const authApi = {
-  // POST /auth/register - Register a new user
+  /**
+   * Register a new user
+   * POST /auth/register
+   */
   register: async (userData: CreateUserDto): Promise<AuthResponse> => {
     const response = await apiClient.post<AuthResponse>(
-      "/auth/register",
+      API_ENDPOINTS.AUTH.REGISTER,
       userData
     );
     // Cookie is set automatically by the backend (HTTP-only)
     return response.data;
   },
 
-  // POST /auth/login - Login user
+  /**
+   * Login user
+   * POST /auth/login
+   */
   login: async (credentials: LoginDto): Promise<AuthResponse> => {
     const response = await apiClient.post<AuthResponse>(
-      "/auth/login",
+      API_ENDPOINTS.AUTH.LOGIN,
       credentials
     );
     // Cookie is set automatically by the backend (HTTP-only)
     return response.data;
   },
 
-  // POST /auth/logout - Logout user
+  /**
+   * Logout user
+   * POST /auth/logout
+   */
   logout: async (): Promise<void> => {
     try {
-      await apiClient.post("/auth/logout");
+      await apiClient.post(API_ENDPOINTS.AUTH.LOGOUT);
       // Cookie is cleared automatically by the backend
     } catch (error) {
       console.error("Error logging out:", error);
     }
   },
 
-  // GET /auth/me - Get current user profile
+  /**
+   * Get current user profile
+   * GET /auth/me
+   */
   getMe: async (): Promise<User> => {
-    const response = await apiClient.get<User>("/auth/me");
+    const response = await apiClient.get<User>(API_ENDPOINTS.AUTH.ME);
     return response.data;
   },
 };
 
+/**
+ * Notes API
+ *
+ * Handles CRUD operations for notes and note attachments.
+ */
 export const notesApi = {
-  // GET /notes - Get all notes
+  /**
+   * Get all notes
+   * GET /notes
+   */
   getAllNotes: async (): Promise<Note[]> => {
-    const response = await apiClient.get<Note[]>("/notes");
+    const response = await apiClient.get<Note[]>(API_ENDPOINTS.NOTES.BASE);
     return response.data;
   },
 
-  // GET /notes/:id - Get a single note by ID
+  /**
+   * Get a single note by ID
+   * GET /notes/:id
+   */
   getNoteById: async (id: string): Promise<Note> => {
-    const response = await apiClient.get<Note>(`/notes/${id}`);
+    const response = await apiClient.get<Note>(API_ENDPOINTS.NOTES.BY_ID(id));
     return response.data;
   },
 
-  // POST /notes - Create a new note
+  /**
+   * Create a new note
+   * POST /notes
+   */
   createNote: async (note: CreateNoteDto): Promise<Note> => {
-    const response = await apiClient.post<Note>("/notes", note);
+    const response = await apiClient.post<Note>(API_ENDPOINTS.NOTES.BASE, note);
     return response.data;
   },
 
-  // PUT /notes/:id - Update a note (full update)
+  /**
+   * Update a note (full update)
+   * PUT /notes/:id
+   */
   updateNote: async (id: string, note: UpdateNoteDto): Promise<Note> => {
-    const response = await apiClient.put<Note>(`/notes/${id}`, note);
+    const response = await apiClient.put<Note>(
+      API_ENDPOINTS.NOTES.BY_ID(id),
+      note
+    );
     return response.data;
   },
 
-  // PATCH /notes/:id - Update a note (partial update)
+  /**
+   * Update a note (partial update)
+   * PATCH /notes/:id
+   */
   patchNote: async (id: string, note: UpdateNoteDto): Promise<Note> => {
-    const response = await apiClient.patch<Note>(`/notes/${id}`, note);
+    const response = await apiClient.patch<Note>(
+      API_ENDPOINTS.NOTES.BY_ID(id),
+      note
+    );
     return response.data;
   },
 
-  // DELETE /notes/:id - Delete a note
+  /**
+   * Delete a note
+   * DELETE /notes/:id
+   */
   deleteNote: async (id: string): Promise<void> => {
-    await apiClient.delete(`/notes/${id}`);
+    await apiClient.delete(API_ENDPOINTS.NOTES.BY_ID(id));
   },
 
-  // POST /notes/:id/attachments - Upload an attachment to a note
+  /**
+   * Upload an attachment to a note
+   * POST /notes/:id/attachments
+   */
   uploadAttachment: async (noteId: string, file: File): Promise<Attachment> => {
     const formData = new FormData();
     formData.append("file", file);
 
     const response = await apiClient.post<Attachment>(
-      `/notes/${noteId}/attachments`,
+      API_ENDPOINTS.NOTES.ATTACHMENTS(noteId),
       formData,
       {
         headers: {
@@ -131,83 +188,126 @@ export const notesApi = {
     return response.data;
   },
 
-  // GET /notes/:id/attachments - Get all attachments for a note
+  /**
+   * Get all attachments for a note
+   * GET /notes/:id/attachments
+   */
   getNoteAttachments: async (noteId: string): Promise<Attachment[]> => {
     const response = await apiClient.get<Attachment[]>(
-      `/notes/${noteId}/attachments`
+      API_ENDPOINTS.NOTES.ATTACHMENTS(noteId)
     );
     return response.data;
   },
 
-  // DELETE /notes/attachments/:attachmentId - Delete an attachment
+  /**
+   * Delete an attachment
+   * DELETE /notes/attachments/:attachmentId
+   */
   deleteAttachment: async (attachmentId: string): Promise<void> => {
-    await apiClient.delete(`/notes/attachments/${attachmentId}`);
+    await apiClient.delete(API_ENDPOINTS.NOTES.ATTACHMENT_BY_ID(attachmentId));
   },
 };
 
+/**
+ * Todos API
+ *
+ * Handles CRUD operations for todo lists and todo items.
+ */
 export const todosApi = {
-  // GET /todos - Get all todos
+  /**
+   * Get all todos
+   * GET /todos
+   */
   getAllTodos: async (): Promise<Todo[]> => {
-    const response = await apiClient.get<Todo[]>("/todos");
+    const response = await apiClient.get<Todo[]>(API_ENDPOINTS.TODOS.BASE);
     return response.data;
   },
 
-  // GET /todos/:id - Get a single todo by ID
+  /**
+   * Get a single todo by ID
+   * GET /todos/:id
+   */
   getTodoById: async (id: string): Promise<Todo> => {
-    const response = await apiClient.get<Todo>(`/todos/${id}`);
+    const response = await apiClient.get<Todo>(API_ENDPOINTS.TODOS.BY_ID(id));
     return response.data;
   },
 
-  // POST /todos - Create a new todo list
+  /**
+   * Create a new todo list
+   * POST /todos
+   */
   createTodo: async (todo: CreateTodoDto): Promise<Todo> => {
-    const response = await apiClient.post<Todo>("/todos", todo);
+    const response = await apiClient.post<Todo>(API_ENDPOINTS.TODOS.BASE, todo);
     return response.data;
   },
 
-  // PUT /todos/:id - Update a todo list
+  /**
+   * Update a todo list
+   * PUT /todos/:id
+   */
   updateTodo: async (id: string, todo: UpdateTodoDto): Promise<Todo> => {
-    const response = await apiClient.put<Todo>(`/todos/${id}`, todo);
+    const response = await apiClient.put<Todo>(
+      API_ENDPOINTS.TODOS.BY_ID(id),
+      todo
+    );
     return response.data;
   },
 
-  // DELETE /todos/:id - Delete a todo list
+  /**
+   * Delete a todo list
+   * DELETE /todos/:id
+   */
   deleteTodo: async (id: string): Promise<void> => {
-    await apiClient.delete(`/todos/${id}`);
+    await apiClient.delete(API_ENDPOINTS.TODOS.BY_ID(id));
   },
 
-  // GET /todos/:id/items - Get all items for a todo
+  /**
+   * Get all items for a todo
+   * GET /todos/:id/items
+   */
   getTodoItems: async (todoId: string): Promise<TodoItem[]> => {
-    const response = await apiClient.get<TodoItem[]>(`/todos/${todoId}/items`);
+    const response = await apiClient.get<TodoItem[]>(
+      API_ENDPOINTS.TODOS.ITEMS(todoId)
+    );
     return response.data;
   },
 
-  // POST /todos/:id/items - Create a new item in a todo
+  /**
+   * Create a new item in a todo
+   * POST /todos/:id/items
+   */
   createTodoItem: async (
     todoId: string,
     item: CreateTodoItemDto
   ): Promise<TodoItem> => {
     const response = await apiClient.post<TodoItem>(
-      `/todos/${todoId}/items`,
+      API_ENDPOINTS.TODOS.ITEMS(todoId),
       item
     );
     return response.data;
   },
 
-  // PUT /todos/:id/items/:itemId - Update a todo item
+  /**
+   * Update a todo item
+   * PUT /todos/:id/items/:itemId
+   */
   updateTodoItem: async (
     todoId: string,
     itemId: string,
     item: UpdateTodoItemDto
   ): Promise<TodoItem> => {
     const response = await apiClient.put<TodoItem>(
-      `/todos/${todoId}/items/${itemId}`,
+      API_ENDPOINTS.TODOS.ITEM_BY_ID(todoId, itemId),
       item
     );
     return response.data;
   },
 
-  // DELETE /todos/:id/items/:itemId - Delete a todo item
+  /**
+   * Delete a todo item
+   * DELETE /todos/:id/items/:itemId
+   */
   deleteTodoItem: async (todoId: string, itemId: string): Promise<void> => {
-    await apiClient.delete(`/todos/${todoId}/items/${itemId}`);
+    await apiClient.delete(API_ENDPOINTS.TODOS.ITEM_BY_ID(todoId, itemId));
   },
 };
