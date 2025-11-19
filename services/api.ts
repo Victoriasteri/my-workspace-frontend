@@ -28,10 +28,9 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Unauthorized - clear user from sessionStorage
+      // Unauthorized - notify AuthContext to clear user
       // ProtectedRoute will handle redirect
       if (typeof window !== "undefined") {
-        sessionStorage.removeItem("user");
         // Dispatch a custom event that AuthContext can listen to
         window.dispatchEvent(new CustomEvent("auth:logout"));
       }
