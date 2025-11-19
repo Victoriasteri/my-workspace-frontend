@@ -17,49 +17,23 @@ const apiClient = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
+  withCredentials: true, // Send cookies with requests (required for HTTP-only cookies)
 });
 
-// Token management
-const TOKEN_KEY = "auth_token";
-
-export const setAuthToken = (token: string | null) => {
-  if (token) {
-    localStorage.setItem(TOKEN_KEY, token);
-    apiClient.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-  } else {
-    localStorage.removeItem(TOKEN_KEY);
-    delete apiClient.defaults.headers.common["Authorization"];
-  }
-};
-
-export const getAuthToken = (): string | null => {
-  if (typeof window !== "undefined") {
-    return localStorage.getItem(TOKEN_KEY);
-  }
-  return null;
-};
-
-// Initialize token on load
-if (typeof window !== "undefined") {
-  const token = getAuthToken();
-  if (token) {
-    apiClient.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-  }
-}
+// Note: We use HTTP-only cookies for authentication, so no token management is needed.
+// Cookies are automatically sent with requests via withCredentials: true
 
 // Add response interceptor to handle 401 errors
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Unauthorized - clear token and redirect to login
-      setAuthToken(null);
+      // Unauthorized - clear user from sessionStorage
+      // ProtectedRoute will handle redirect
       if (typeof window !== "undefined") {
-        // Only redirect if we're not already on login/signup pages
-        const currentPath = window.location.pathname;
-        if (currentPath !== "/login" && currentPath !== "/signup") {
-          window.location.href = "/login";
-        }
+        sessionStorage.removeItem("user");
+        // Dispatch a custom event that AuthContext can listen to
+        window.dispatchEvent(new CustomEvent("auth:logout"));
       }
     }
     return Promise.reject(error);
@@ -74,9 +48,7 @@ export const authApi = {
       "/auth/register",
       userData
     );
-    if (response.data.access_token) {
-      setAuthToken(response.data.access_token);
-    }
+    // Cookie is set automatically by the backend (HTTP-only)
     return response.data;
   },
 
@@ -86,9 +58,7 @@ export const authApi = {
       "/auth/login",
       credentials
     );
-    if (response.data.access_token) {
-      setAuthToken(response.data.access_token);
-    }
+    // Cookie is set automatically by the backend (HTTP-only)
     return response.data;
   },
 
@@ -96,16 +66,15 @@ export const authApi = {
   logout: async (): Promise<void> => {
     try {
       await apiClient.post("/auth/logout");
+      // Cookie is cleared automatically by the backend
     } catch (error) {
       console.error("Error logging out:", error);
-    } finally {
-      setAuthToken(null);
     }
   },
 
-  // GET /auth/profile - Get current user profile
-  getProfile: async (): Promise<User> => {
-    const response = await apiClient.get<User>("/auth/profile");
+  // GET /auth/me - Get current user profile
+  getMe: async (): Promise<User> => {
+    const response = await apiClient.get<User>("/auth/me");
     return response.data;
   },
 };

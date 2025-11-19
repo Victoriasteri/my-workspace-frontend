@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { User, CreateUserDto } from "@/types/user";
-import { authApi, getAuthToken, setAuthToken } from "@/services/api";
+import { authApi } from "@/services/api";
 
 interface AuthContextType {
   user: User | null;
@@ -27,57 +27,84 @@ interface AuthProviderProps {
   children: React.ReactNode;
 }
 
+const USER_STORAGE_KEY = "user";
+
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Helper to save user to sessionStorage (for quick display before backend verification)
+  const saveUser = (userData: User | null) => {
+    if (userData) {
+      sessionStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userData));
+    } else {
+      sessionStorage.removeItem(USER_STORAGE_KEY);
+    }
+    setUser(userData);
+  };
+
+  // Load user on mount - try backend first, fallback to sessionStorage for quick display
   useEffect(() => {
     const loadUser = async () => {
-      const token = getAuthToken();
-      if (token) {
-        try {
-          const profile = await authApi.getProfile();
-          setUser(profile);
-        } catch (error) {
-          console.error("Error loading user profile:", error);
-          // Token might be invalid, clear it
-          setAuthToken(null);
-          setUser(null);
+      // First, try to restore from sessionStorage for immediate display
+      try {
+        const storedUser = sessionStorage.getItem(USER_STORAGE_KEY);
+        if (storedUser) {
+          const userData = JSON.parse(storedUser);
+          setUser(userData); // Show user immediately
         }
+      } catch (error) {
+        console.error("Error loading user from storage:", error);
+        sessionStorage.removeItem(USER_STORAGE_KEY);
       }
-      setLoading(false);
+
+      // Then verify with backend
+      try {
+        const profile = await authApi.getMe();
+        setUser(profile);
+        // Update sessionStorage with fresh data
+        sessionStorage.setItem(USER_STORAGE_KEY, JSON.stringify(profile));
+      } catch (error: any) {
+        // If 401, user is not authenticated
+        if (error.response?.status === 401) {
+          setUser(null);
+          sessionStorage.removeItem(USER_STORAGE_KEY);
+        } else {
+          // Network error - keep sessionStorage user if exists
+          console.error("Error fetching user profile:", error);
+        }
+      } finally {
+        setLoading(false);
+      }
     };
 
     loadUser();
 
-    // Listen for storage changes (e.g., when token is cleared by interceptor)
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "auth_token" && !e.newValue) {
-        // Token was removed, clear user state
-        setUser(null);
-      }
+    // Listen for logout events from interceptor
+    const handleLogout = () => {
+      setUser(null);
     };
 
-    window.addEventListener("storage", handleStorageChange);
+    window.addEventListener("auth:logout", handleLogout);
 
     return () => {
-      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("auth:logout", handleLogout);
     };
   }, []); // Only run once on mount
 
   const login = async (email: string, password: string) => {
     const response = await authApi.login({ email, password });
-    setUser(response.user);
+    saveUser(response.user);
   };
 
   const register = async (userData: CreateUserDto) => {
     const response = await authApi.register(userData);
-    setUser(response.user);
+    saveUser(response.user);
   };
 
   const logout = async () => {
     await authApi.logout();
-    setUser(null);
+    saveUser(null);
   };
 
   const value: AuthContextType = {

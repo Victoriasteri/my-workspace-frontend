@@ -40,6 +40,7 @@ function TodosPageContent() {
 
   useEffect(() => {
     fetchTodos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleCreateTodo = async (todoData: CreateTodoDto): Promise<Todo> => {
