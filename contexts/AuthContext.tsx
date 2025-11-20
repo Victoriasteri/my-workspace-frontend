@@ -31,16 +31,20 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hasAttemptedLoad, setHasAttemptedLoad] = useState(false);
+  const [skipAutoLoad, setSkipAutoLoad] = useState(false);
   const { config, loading: configLoading } = useConfig();
 
-  // Load user after config is loaded
+  // Load user after config is loaded (only once)
   useEffect(() => {
     // Wait for config to be loaded before making API calls
-    if (configLoading || !config) {
+    // Skip if we've already attempted to load or if we're skipping auto-load
+    if (configLoading || !config || hasAttemptedLoad || skipAutoLoad) {
       return;
     }
 
     const loadUser = async () => {
+      setHasAttemptedLoad(true);
       try {
         const profile = await authApi.getMe();
         setUser(profile);
@@ -63,6 +67,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Listen for logout events from interceptor
     const handleLogout = () => {
       setUser(null);
+      setHasAttemptedLoad(false); // Allow reloading after logout event
+      setSkipAutoLoad(true); // Prevent auto-loading immediately after logout
     };
 
     window.addEventListener("auth:logout", handleLogout);
@@ -70,21 +76,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return () => {
       window.removeEventListener("auth:logout", handleLogout);
     };
-  }, [configLoading, config]); // Run when config is loaded
+  }, [configLoading, config, hasAttemptedLoad, skipAutoLoad]); // Run when config is loaded
 
   const login = async (email: string, password: string) => {
     const response = await authApi.login({ email, password });
     setUser(response.user);
+    setHasAttemptedLoad(true); // Mark as loaded after login
+    setSkipAutoLoad(false); // Allow normal loading after login
   };
 
   const register = async (userData: CreateUserDto) => {
     const response = await authApi.register(userData);
     setUser(response.user);
+    setHasAttemptedLoad(true); // Mark as loaded after register
+    setSkipAutoLoad(false); // Allow normal loading after register
   };
 
   const logout = async () => {
-    await authApi.logout();
+    // Clear user state immediately and prevent auto-loading
     setUser(null);
+    setHasAttemptedLoad(false); // Reset so we can load again if needed
+    setSkipAutoLoad(true); // Prevent immediate auto-loading after logout
+
+    // Then call logout API to clear server-side session
+    try {
+      await authApi.logout();
+    } catch (error) {
+      console.error("Error during logout:", error);
+      // Even if logout fails, we've cleared local state
+    }
   };
 
   const value: AuthContextType = {

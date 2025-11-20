@@ -87,11 +87,30 @@ export const authApi = {
     return response.data;
   },
 
+  /**
+   * Logout user
+   *
+   * IMPORTANT: This requires a server-side logout endpoint to properly clear HTTP-only cookies.
+   * Without the endpoint, the cookie will remain and the user may be auto-logged back in.
+   *
+   * The endpoint should:
+   * 1. Invalidate the session on the server
+   * 2. Send a Set-Cookie header to clear/expire the HTTP-only cookie
+   */
   logout: async (): Promise<void> => {
     try {
       await getApiClient().post(API_ENDPOINTS.AUTH.LOGOUT);
-    } catch (error) {
-      console.error("Error logging out:", error);
+    } catch (error: any) {
+      // If endpoint doesn't exist (404) or other error, log but don't throw
+      // The client-side state is still cleared, but the cookie may remain
+      if (error.response?.status === 404) {
+        console.warn(
+          "Logout endpoint not found. The session cookie may not be cleared. " +
+            "Please implement POST /auth/logout on your backend."
+        );
+      } else {
+        console.error("Error logging out:", error);
+      }
     }
   },
 
